@@ -238,21 +238,18 @@ begin
     rewrite(f);
     writeln(f, 'unit MBF.Fonts.' + FontName + ';');
     writeln(f, '{$mode objfpc}');
+    writeln(f, '{$WRITEABLECONST OFF}');
 
     writeln(f, 'interface');
     writeln(f, 'uses');
     writeln(f, '  MBF.Displays.CustomDisplay;');
 
-    var DataSize : integer;
+    var dataSize : integer;
 
+    dataSize := ((charWidth-1) div 8 + 1) * charHeight;
     if antialiasedFont = true then
-      DataSize := (charWidth div 4) * charHeight
-    else
-      DataSize := (charWidth div 8) * charHeight;
+      dataSize := ((charWidth-1) div 4 + 1) * charHeight;
 
-    writeln(f, 'const');
-    writeln(f, '  ' + FontName + '_FontData : array[0..' + (Length(Memo1.Text) - 1).ToString + '] of array[0..' + (DataSize - 1).ToString +
-      '] of byte = ');
     var requiredChars := '';
     for i := 0 to 255 do
     begin
@@ -260,69 +257,68 @@ begin
         requiredChars := requiredChars + chr(i);
     end;
 
+    writeln(f, 'const');
+    writeln(f, '  ' + FontName + '_FontData : array[0..' + (Length(requiredChars) - 1).ToString + '] of array[0..' + (DataSize - 1).ToString +
+      '] of byte = ');
+
     var k := 0;
-    var handledChars := '';
     writeln(f, '  (');
-    for i := 0 to 255 do
+    for i := 1 to length(requiredChars) do
     begin
-      if String(Memo1.Text).contains(chr(i)) then
+      charBitmap.Canvas.Pen.Color := clBlack;
+      charBitmap.Canvas.Brush.Color := clWhite;
+      charBitmap.Canvas.FillRect(TRect.Create(0, 0, charWidth, charHeight));
+      charBitmap.Canvas.TextOut(0, 0, requiredChars[i]);
+      writeln(f, '    (');
+
+      for y := 0 to charHeight - 1 do
       begin
-        handledChars := handledChars + chr(i);
-        charBitmap.Canvas.Pen.Color := clBlack;
-        charBitmap.Canvas.Brush.Color := clWhite;
-        charBitmap.Canvas.FillRect(TRect.Create(0, 0, charWidth, charHeight));
-        charBitmap.Canvas.TextOut(0, 0, chr(i));
-        writeln(f, '    (');
-
-        for y := 0 to charHeight - 1 do
+        var CharData := '';
+        for x := 0 to charWidth - 1 do
         begin
-          var CharData := '';
-          for x := 0 to charWidth - 1 do
+          var Grey : byte;
+          var Grey2 : String;
+
+          var Pixel := charBitmap.Canvas.Pixels[x, y];
+          Grey := Round(TColorRec(Pixel).R * 0.30 + TColorRec(Pixel).G * 0.59 + TColorRec(Pixel).B * 0.11);
+
+          if antialiasedFont = false then
           begin
-            var Grey : byte;
-            var Grey2 : String;
-
-            var Pixel := charBitmap.Canvas.Pixels[x, y];
-            Grey := Round(TColorRec(Pixel).R * 0.30 + TColorRec(Pixel).G * 0.59 + TColorRec(Pixel).B * 0.11);
-
-            if antialiasedFont = false then
-            begin
-              if Grey <= 127 then
-                Grey2 := '1'
-              else
-                Grey2 := '0';
-            end
+            if Grey <= 127 then
+              Grey2 := '1'
             else
-            begin
-              if Grey < 64 then
-                Grey2 := '11';
-              if Grey > 64 then
-                Grey2 := '10';
-              if Grey > 128 then
-                Grey2 := '01';
-              if Grey > 192 then
-                Grey2 := '00';
-            end;
-            CharData := CharData + Grey2;
-          end;
-          if (Length(CharData) div 8) * 8 <> Length(CharData) then
-            CharData := CharData + '0000';
-          var Line := '    ';
-          for var j := 0 to (CharData.Length div 8) - 1 do
-          begin
-            Line := Line + '%' + CharData[j * 8 + 1] + CharData[j * 8 + 2] + CharData[j * 8 + 3] + CharData[j * 8 + 4] +
-              CharData[j * 8 + 5] + CharData[j * 8 + 6] + CharData[j * 8 + 7] + CharData[j * 8 + 8] + ',';
-          end;
-          if y < charHeight - 1 then
-            writeln(f, Line)
+              Grey2 := '0';
+          end
           else
-            writeln(f, Line.Remove(Line.Length - 1));
+          begin
+            if Grey < 64 then
+              Grey2 := '11';
+            if Grey > 64 then
+              Grey2 := '10';
+            if Grey > 128 then
+              Grey2 := '01';
+            if Grey > 192 then
+              Grey2 := '00';
+          end;
+          CharData := CharData + Grey2;
         end;
-        if handledChars <> requiredChars then
-          writeln(f, '    ),')
+        while (Length(CharData) div 8) * 8 <> Length(CharData) do
+          CharData := CharData + '0';
+        var Line := '    ';
+        for var j := 0 to (CharData.Length div 8) - 1 do
+        begin
+          Line := Line + '%' + CharData[j * 8 + 1] + CharData[j * 8 + 2] + CharData[j * 8 + 3] + CharData[j * 8 + 4] +
+            CharData[j * 8 + 5] + CharData[j * 8 + 6] + CharData[j * 8 + 7] + CharData[j * 8 + 8] + ',';
+        end;
+        if y < charHeight - 1 then
+          writeln(f, Line)
         else
-          writeln(f, '    )')
+          writeln(f, Line.Remove(Line.Length - 1));
       end;
+      if i <> length(requiredChars) then
+        writeln(f, '    ),')
+      else
+        writeln(f, '    )')
     end;
     writeln(f, '  );');
     writeln(f);
@@ -335,8 +331,8 @@ begin
       writeln(f,'    BitsPerPixel : 1;')
     else
       writeln(f,'    BitsPerPixel : 2;');
-    writeln(f,'    BytesPerChar : '+DataSize.ToString+';');
-    writeln(f,'    Charmap : '''+handledChars.replace('''','''''')+''';');
+    writeln(f,'    BytesPerChar : '+dataSize.ToString+';');
+    writeln(f,'    Charmap : '''+requiredChars.replace('''','''''')+''';');
     writeln(f,'    pFontData : @'+FontName+'_FontData;');
     writeln(f,'  );');
     writeln(f);

@@ -76,7 +76,7 @@ object Form1: TForm1
       Height = 49
       Caption = 'Font Rendering'
       Columns = 4
-      ItemIndex = 0
+      ItemIndex = 3
       Items.Strings = (
         'AntiAliased'
         'ClearType'
